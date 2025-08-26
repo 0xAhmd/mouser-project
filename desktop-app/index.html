@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mouse Controller Server</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .app-container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            width: 100%;
+            max-width: 500px;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .app-header {
+            margin-bottom: 40px;
+        }
+
+        .app-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 20px;
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            color: white;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        h1 {
+            font-size: 28px;
+            color: #2d3748;
+            margin-bottom: 8px;
+            font-weight: 700;
+        }
+
+        .subtitle {
+            color: #718096;
+            font-size: 16px;
+        }
+
+        .status-card {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 16px;
+            padding: 24px;
+            margin: 24px 0;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ef4444;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.running {
+            background: #10b981;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .ip-display {
+            background: rgba(102, 126, 234, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            margin: 16px 0;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 18px;
+            font-weight: 600;
+            color: #667eea;
+            border: 2px dashed rgba(102, 126, 234, 0.3);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .btn {
+            flex: 1;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 16px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn.stop {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+        }
+
+        .btn.stop:hover {
+            box-shadow: 0 10px 30px rgba(239, 68, 68, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn:disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .logs-section {
+            margin-top: 24px;
+            text-align: left;
+        }
+
+        .logs-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .logs-header h3 {
+            color: #2d3748;
+            font-size: 18px;
+        }
+
+        .clear-logs {
+            background: none;
+            border: none;
+            color: #667eea;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: underline;
+        }
+
+        .logs-container {
+            background: #1a202c;
+            border-radius: 12px;
+            padding: 16px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .log-entry {
+            color: #a0aec0;
+            margin-bottom: 4px;
+        }
+
+        .log-entry.success {
+            color: #68d391;
+        }
+
+        .log-entry.error {
+            color: #fc8181;
+        }
+
+        .log-entry.info {
+            color: #63b3ed;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-top: 24px;
+        }
+
+        .feature-card {
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .feature-icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .feature-title {
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 4px;
+        }
+
+        .feature-desc {
+            font-size: 12px;
+            color: #718096;
+        }
+
+        .startup-section {
+            background: rgba(255, 248, 220, 0.8);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 24px;
+            border: 1px solid rgba(255, 193, 7, 0.3);
+        }
+
+        .startup-section h4 {
+            color: #b45309;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .startup-instructions {
+            font-size: 14px;
+            color: #92400e;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="app-header">
+            <div class="app-icon">🖱️</div>
+            <h1>Mouse Controller</h1>
+            <p class="subtitle">Control your PC remotely</p>
+        </div>
+
+        <div class="status-card">
+            <div class="status-indicator">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Server Stopped</span>
+            </div>
+            
+            <div class="ip-display" id="ipDisplay">
+                Click Start to get IP address
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn" id="startBtn" onclick="startServer()">
+                    <span id="startBtnText">Start Server</span>
+                </button>
+                <button class="btn stop" id="stopBtn" onclick="stopServer()" disabled>
+                    Stop Server
+                </button>
+            </div>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">📱</div>
+                <div class="feature-title">Mobile App</div>
+                <div class="feature-desc">Connect from your phone</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⌨️</div>
+                <div class="feature-title">Keyboard</div>
+                <div class="feature-desc">Type & shortcuts</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🖱️</div>
+                <div class="feature-title">Mouse</div>
+                <div class="feature-desc">Click & scroll</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <div class="feature-title">Secure</div>
+                <div class="feature-desc">Local network only</div>
+            </div>
+        </div>
+
+      
+
+        <div class="logs-section">
+            <div class="logs-header">
+                <h3>Server Logs</h3>
+                <button class="clear-logs" onclick="clearLogs()">Clear</button>
+            </div>
+            <div class="logs-container" id="logsContainer">
+                <div class="log-entry">Server logs will appear here...</div>
+            </div>
+        </div>
+    </div>
+
+   <script>
+    let isServerRunning = false;
+
+    async function startServer() {
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const ipDisplay = document.getElementById('ipDisplay');
+        const startBtnText = document.getElementById('startBtnText');
+
+        // Show loading state
+        startBtn.disabled = true;
+        startBtnText.innerHTML = '<span class="loading"></span> Starting...';
+
+        try {
+            addLog('Starting mouse controller server...', 'info');
+            
+            // Use Electron API to start server
+            const result = await window.electronAPI.startServer();
+            
+            // Update UI
+            isServerRunning = true;
+            statusDot.classList.add('running');
+            statusText.textContent = 'Server Running';
+            ipDisplay.textContent = `http://${result.ip}:8080`;
+            
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            startBtnText.innerHTML = '▶️ Start Server';
+
+            addLog(`Server started successfully on ${result.ip}:8080`, 'success');
+        } catch (error) {
+            addLog(`Failed to start server: ${error.message}`, 'error');
+            startBtn.disabled = false;
+            startBtnText.innerHTML = '▶️ Start Server';
+            isServerRunning = false;
+        }
+    }
+
+    async function stopServer() {
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const ipDisplay = document.getElementById('ipDisplay');
+
+        try {
+            addLog('Stopping server...', 'info');
+            await window.electronAPI.stopServer();
+
+            isServerRunning = false;
+            statusDot.classList.remove('running');
+            statusText.textContent = 'Server Stopped';
+            ipDisplay.textContent = 'Click Start to get IP address';
+            
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+
+            addLog('Server stopped successfully', 'success');
+        } catch (error) {
+            addLog(`Failed to stop server: ${error.message}`, 'error');
+        }
+    }
+
+    function addLog(message, type = 'info') {
+        const logsContainer = document.getElementById('logsContainer');
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement('div');
+        logEntry.className = `log-entry ${type}`;
+        logEntry.textContent = `[${timestamp}] ${message}`;
+        
+        logsContainer.appendChild(logEntry);
+        logsContainer.scrollTop = logsContainer.scrollHeight;
+        
+        // Keep only last 100 log entries
+        while (logsContainer.children.length > 100) {
+            logsContainer.removeChild(logsContainer.firstChild);
+        }
+    }
+
+    function clearLogs() {
+        const logsContainer = document.getElementById('logsContainer');
+        logsContainer.innerHTML = '<div class="log-entry">Server logs will appear here...</div>';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        addLog('Mouse Controller Desktop App initialized', 'info');
+        addLog('Ready to start server', 'info');
+    });
+
+    window.addEventListener('beforeunload', (e) => {
+        if (isServerRunning) {
+            e.preventDefault();
+            e.returnValue = 'Server is still running. Are you sure you want to close?';
+        }
+    });
+</script>
+
+</body>
+</html>
