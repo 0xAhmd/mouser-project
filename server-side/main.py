@@ -11,6 +11,7 @@ from routes.mouse_routes import mouse_bp
 from routes.keyboard_routes import keyboard_bp
 from routes.gesture_routes import gesture_bp
 from routes.status_routes import status_bp
+from routes.file_transfer_routes import transfer_bp  # NEW IMPORT
 from utils.logger import setup_logger
 from utils.network_utils import print_server_info
 
@@ -19,11 +20,17 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
     
+    # Set max content length for file uploads (500MB)
+    app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
+    
     # Register blueprints
     app.register_blueprint(mouse_bp)
     app.register_blueprint(keyboard_bp)
     app.register_blueprint(gesture_bp)
     app.register_blueprint(status_bp)
+    app.register_blueprint(transfer_bp)  # NEW BLUEPRINT
+    app.register_blueprint(pc_transfer_bp)
+
     
     return app
 
@@ -55,3 +62,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
