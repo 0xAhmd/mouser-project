@@ -11,7 +11,7 @@ from routes.mouse_routes import mouse_bp
 from routes.keyboard_routes import keyboard_bp
 from routes.gesture_routes import gesture_bp
 from routes.status_routes import status_bp
-from routes.file_transfer_routes import transfer_bp  # NEW IMPORT
+from .file_transfer_routes import pc_transfer_bp
 from utils.logger import setup_logger
 from utils.network_utils import print_server_info
 
