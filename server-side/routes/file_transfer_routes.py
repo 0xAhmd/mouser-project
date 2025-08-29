@@ -1,23 +1,103 @@
 """
-Enhanced File Transfer Server with PC-to-Phone capability
-Add these routes to your existing Flask server
+File Transfer Routes - Complete file transfer functionality
+This file contains both phone-to-PC uploads and PC-to-phone downloads
+Add this file as: server-side/routes/file_transfer_routes.py
 """
 
 import os
 import json
+import shutil
 import mimetypes
+import base64
 from pathlib import Path
-from flask import Blueprint, request, jsonify, send_file, Response
+from flask import Blueprint, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 import logging
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# Add this blueprint to your existing server
+# Create both blueprints
+transfer_bp = Blueprint('transfer', __name__)
 pc_transfer_bp = Blueprint('pc_transfer', __name__)
 
 # Configuration
+ALLOWED_EXTENSIONS = {
+    'txt', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+    'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'heic', 'raw',
+    'mp3', 'mp4', 'avi', 'mov', 'wav', 'flac', 'm4a', 'mkv', 'wmv',
+    'zip', 'rar', '7z', 'tar', 'gz', 'bz2',
+    'json', 'xml', 'csv', 'log', 'py', 'js', 'html', 'css', 'md'
+}
+
+MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024  # 500MB
+DEFAULT_UPLOAD_DIR = str(Path.home() / "Downloads" / "PhoneUploads")
+
+def ensure_upload_directory(directory=None):
+    """Ensure upload directory exists"""
+    if directory is None:
+        directory = DEFAULT_UPLOAD_DIR
+    
+    Path(directory).mkdir(parents=True, exist_ok=True)
+    return directory
+
+def is_allowed_file(filename):
+    """Check if file extension is allowed"""
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def get_disk_space(path):
+    """Get disk space information for a given path"""
+    try:
+        stats = shutil.disk_usage(path)
+        total = stats.total
+        used = stats.total - stats.free
+        free = stats.free
+        
+        return {
+            'total': total,
+            'used': used,
+            'free': free,
+            'total_gb': round(total / (1024**3), 2),
+            'used_gb': round(used / (1024**3), 2),
+            'free_gb': round(free / (1024**3), 2),
+            'usage_percent': round((used / total) * 100, 2)
+        }
+    except Exception as e:
+        logger.error(f"Error getting disk space: {e}")
+        return None
+
+@transfer_bp.route('/file-transfer/status', methods=['GET'])
+def get_transfer_status():
+    """Get file transfer server status and capabilities"""
+    try:
+        return jsonify({
+            "status": "active",
+            "version": "2.0-enhanced",
+            "features": [
+                "upload", "download", "directory_management", 
+                "disk_space", "file_validation"
+            ],
+            "allowedExtensions": list(ALLOWED_EXTENSIONS),
+            "defaultDirectory": DEFAULT_UPLOAD_DIR,
+            "maxFileSize": f"{MAX_FILE_SIZE_BYTES // (1024*1024)}MB",
+            "supportedOperations": [
+                "upload_files", "get_directories", "create_directory", "get_disk_space"
+            ]
+        })
+    except Exception as e:
+        logger.error(f"Error getting transfer status: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+# ==============================================================================
+# PC-to-Phone Transfer Routes (Downloads)
+# ==============================================================================
+
+# Configuration for downloads
 ALLOWED_DOWNLOAD_EXTENSIONS = {
     'txt', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
     'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp',
@@ -26,7 +106,7 @@ ALLOWED_DOWNLOAD_EXTENSIONS = {
     'json', 'xml', 'csv', 'log'
 }
 
-MAX_FILE_SIZE_MB = 100  # Limit file size for mobile downloads
+MAX_DOWNLOAD_FILE_SIZE_MB = 100  # Limit file size for mobile downloads
 MAX_FILES_PER_REQUEST = 10
 
 def is_safe_path(base_path, path):
@@ -108,11 +188,11 @@ def browse_directories():
                             "path": str(item),
                             "type": "file",
                             "size": file_stat.st_size,
-                            "size_formatted": format_file_size(file_stat.st_size),
+                            "sizeFormatted": format_file_size(file_stat.st_size),
                             "extension": file_ext,
-                            "downloadable": file_ext in ALLOWED_DOWNLOAD_EXTENSIONS and get_file_size_mb(item) <= MAX_FILE_SIZE_MB,
+                            "downloadable": file_ext in ALLOWED_DOWNLOAD_EXTENSIONS and get_file_size_mb(item) <= MAX_DOWNLOAD_FILE_SIZE_MB,
                             "modified": datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
-                            "mime_type": mimetypes.guess_type(str(item))[0] or 'application/octet-stream'
+                            "mimeType": mimetypes.guess_type(str(item))[0] or 'application/octet-stream'
                         })
                 except (OSError, PermissionError):
                     continue  # Skip inaccessible files
@@ -129,12 +209,12 @@ def browse_directories():
         
         return jsonify({
             "status": "success",
-            "current_path": str(target_path),
-            "parent_path": str(target_path.parent) if target_path != target_path.parent else None,
+            "currentPath": str(target_path),
+            "parentPath": str(target_path.parent) if target_path != target_path.parent else None,
             "directories": directories,
             "files": files,
-            "total_directories": len(directories),
-            "total_files": len(files)
+            "totalDirectories": len(directories),
+            "totalFiles": len(files)
         })
         
     except Exception as e:
@@ -183,26 +263,27 @@ def get_file_info():
                 
                 is_downloadable = (
                     file_ext in ALLOWED_DOWNLOAD_EXTENSIONS and 
-                    size_mb <= MAX_FILE_SIZE_MB
+                    size_mb <= MAX_DOWNLOAD_FILE_SIZE_MB
                 )
                 
                 file_info = {
                     "path": str(path),
                     "name": path.name,
+                    "type": "file",
                     "size": file_size,
-                    "size_formatted": format_file_size(file_size),
-                    "size_mb": round(size_mb, 2),
+                    "sizeFormatted": format_file_size(file_size),
+                    "sizeMb": round(size_mb, 2),
                     "extension": file_ext,
                     "downloadable": is_downloadable,
                     "modified": datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
-                    "mime_type": mimetypes.guess_type(str(path))[0] or 'application/octet-stream'
+                    "mimeType": mimetypes.guess_type(str(path))[0] or 'application/octet-stream'
                 }
                 
                 if not is_downloadable:
                     if file_ext not in ALLOWED_DOWNLOAD_EXTENSIONS:
-                        file_info["skip_reason"] = f"File type '.{file_ext}' not allowed"
-                    elif size_mb > MAX_FILE_SIZE_MB:
-                        file_info["skip_reason"] = f"File too large ({size_mb:.1f}MB > {MAX_FILE_SIZE_MB}MB)"
+                        file_info["skipReason"] = f"File type '.{file_ext}' not allowed"
+                    elif size_mb > MAX_DOWNLOAD_FILE_SIZE_MB:
+                        file_info["skipReason"] = f"File too large ({size_mb:.1f}MB > {MAX_DOWNLOAD_FILE_SIZE_MB}MB)"
                 else:
                     downloadable_count += 1
                     total_size += file_size
@@ -217,12 +298,12 @@ def get_file_info():
             "status": "success",
             "files": file_info_list,
             "summary": {
-                "total_files": len(file_info_list),
-                "downloadable_files": downloadable_count,
-                "total_size": total_size,
-                "total_size_formatted": format_file_size(total_size),
-                "max_file_size_mb": MAX_FILE_SIZE_MB,
-                "allowed_extensions": list(ALLOWED_DOWNLOAD_EXTENSIONS)
+                "totalFiles": len(file_info_list),
+                "downloadableFiles": downloadable_count,
+                "totalSize": total_size,
+                "totalSizeFormatted": format_file_size(total_size),
+                "maxFileSizeMb": MAX_DOWNLOAD_FILE_SIZE_MB,
+                "allowedExtensions": list(ALLOWED_DOWNLOAD_EXTENSIONS)
             }
         })
         
@@ -275,17 +356,15 @@ def download_files():
                     })
                     continue
                 
-                if size_mb > MAX_FILE_SIZE_MB:
+                if size_mb > MAX_DOWNLOAD_FILE_SIZE_MB:
                     download_info.append({
                         "path": file_path,
                         "status": "error",
-                        "error": f"File too large ({size_mb:.1f}MB > {MAX_FILE_SIZE_MB}MB)"
+                        "error": f"File too large ({size_mb:.1f}MB > {MAX_DOWNLOAD_FILE_SIZE_MB}MB)"
                     })
                     continue
                 
                 # Generate download URL
-                # Use base64 encoding of path for security
-                import base64
                 encoded_path = base64.urlsafe_b64encode(file_path.encode()).decode()
                 download_url = f"/pc-transfer/download-file/{encoded_path}"
                 
@@ -328,7 +407,6 @@ def download_file(encoded_path):
     """Download a single file"""
     try:
         # Decode the file path
-        import base64
         try:
             file_path = base64.urlsafe_b64decode(encoded_path.encode()).decode()
         except Exception:
@@ -347,7 +425,7 @@ def download_file(encoded_path):
         if file_ext not in ALLOWED_DOWNLOAD_EXTENSIONS:
             return jsonify({"error": "File type not allowed"}), 403
         
-        if get_file_size_mb(path) > MAX_FILE_SIZE_MB:
+        if get_file_size_mb(path) > MAX_DOWNLOAD_FILE_SIZE_MB:
             return jsonify({"error": "File too large"}), 413
         
         # Get MIME type
@@ -416,3 +494,245 @@ def get_quick_access_folders():
         logger.error(f"Error getting quick access folders: {e}")
         return jsonify({"status": "error", "error": str(e)}), 500
 
+@transfer_bp.route('/file-transfer/directories', methods=['GET'])
+def get_directories():
+    """Get available upload directories"""
+    try:
+        home_dir = Path.home()
+        directories = []
+        
+        # Common directories
+        common_dirs = [
+            ("Downloads", home_dir / "Downloads"),
+            ("Documents", home_dir / "Documents"),
+            ("Pictures", home_dir / "Pictures"),
+            ("Videos", home_dir / "Videos"),
+            ("Music", home_dir / "Music"),
+            ("Desktop", home_dir / "Desktop"),
+        ]
+        
+        # Add phone uploads directory
+        phone_uploads_dir = Path(DEFAULT_UPLOAD_DIR)
+        ensure_upload_directory()
+        directories.append({
+            "name": "Phone Uploads",
+            "path": str(phone_uploads_dir),
+            "exists": phone_uploads_dir.exists(),
+            "writable": True
+        })
+        
+        # Add common directories if they exist
+        for name, path in common_dirs:
+            if path.exists() and path.is_dir():
+                try:
+                    # Test if writable
+                    test_file = path / ".write_test"
+                    test_file.touch()
+                    test_file.unlink()
+                    writable = True
+                except (PermissionError, OSError):
+                    writable = False
+                
+                directories.append({
+                    "name": name,
+                    "path": str(path),
+                    "exists": True,
+                    "writable": writable
+                })
+        
+        return jsonify({
+            "status": "success",
+            "directories": directories,
+            "homeDirectory": str(home_dir)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting directories: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "directories": [],
+            "homeDirectory": str(Path.home())
+        }), 500
+
+@transfer_bp.route('/file-transfer/upload', methods=['POST'])
+def upload_files():
+    """Handle file uploads from phone"""
+    try:
+        if 'files' not in request.files:
+            return jsonify({
+                "status": "error",
+                "error": "No files provided"
+            }), 400
+        
+        files = request.files.getlist('files')
+        target_directory = request.form.get('target_directory', DEFAULT_UPLOAD_DIR)
+        
+        # Ensure target directory exists
+        target_path = Path(target_directory)
+        ensure_upload_directory(target_directory)
+        
+        uploaded_files = []
+        skipped_files = []
+        errors = []
+        
+        for file in files:
+            if file.filename == '':
+                continue
+                
+            try:
+                if not is_allowed_file(file.filename):
+                    skipped_files.append({
+                        "filename": file.filename,
+                        "reason": "File type not allowed"
+                    })
+                    continue
+                
+                # Secure the filename
+                filename = secure_filename(file.filename)
+                if not filename:
+                    filename = f"uploaded_file_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                
+                # Handle duplicate filenames
+                file_path = target_path / filename
+                counter = 1
+                original_stem = file_path.stem
+                original_suffix = file_path.suffix
+                
+                while file_path.exists():
+                    new_name = f"{original_stem}_{counter}{original_suffix}"
+                    file_path = target_path / new_name
+                    counter += 1
+                
+                # Save the file
+                file.save(str(file_path))
+                file_size = file_path.stat().st_size
+                
+                uploaded_files.append({
+                    "originalName": file.filename,
+                    "savedName": file_path.name,
+                    "path": str(file_path),
+                    "size": file_size
+                })
+                
+                logger.info(f"Uploaded file: {file_path.name} ({file_size} bytes)")
+                
+            except Exception as e:
+                logger.error(f"Error uploading file {file.filename}: {e}")
+                errors.append(f"Error uploading {file.filename}: {str(e)}")
+        
+        response_data = {
+            "status": "success" if uploaded_files else "partial" if skipped_files else "error",
+            "uploadedFiles": uploaded_files,
+            "skippedFiles": skipped_files,
+            "targetDirectory": target_directory,
+            "totalUploaded": len(uploaded_files),
+            "totalSkipped": len(skipped_files)
+        }
+        
+        if errors:
+            response_data["errors"] = errors
+        
+        if uploaded_files:
+            response_data["message"] = f"Successfully uploaded {len(uploaded_files)} files"
+        elif skipped_files:
+            response_data["message"] = f"All {len(skipped_files)} files were skipped"
+        else:
+            response_data["message"] = "No files were uploaded"
+            response_data["status"] = "error"
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"Error in file upload: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+@transfer_bp.route('/file-transfer/create-directory', methods=['POST'])
+def create_directory():
+    """Create a new directory for uploads"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "status": "error",
+                "error": "No JSON data provided"
+            }), 400
+        
+        action = data.get('action')
+        if action != 'create_directory':
+            return jsonify({
+                "status": "error",
+                "error": "Invalid action"
+            }), 400
+        
+        directory_data = data.get('data', {})
+        path = directory_data.get('path')
+        
+        if not path:
+            return jsonify({
+                "status": "error",
+                "error": "No path provided"
+            }), 400
+        
+        # Security check - ensure path is within allowed locations
+        target_path = Path(path)
+        home_path = Path.home()
+        
+        try:
+            target_path.resolve().relative_to(home_path.resolve())
+        except ValueError:
+            return jsonify({
+                "status": "error",
+                "error": "Directory must be within user home directory"
+            }), 403
+        
+        # Create directory
+        target_path.mkdir(parents=True, exist_ok=True)
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Directory created: {path}"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating directory: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+@transfer_bp.route('/file-transfer/disk-space', methods=['GET'])
+def get_disk_space_info():
+    """Get disk space information for a directory"""
+    try:
+        directory = request.args.get('directory', DEFAULT_UPLOAD_DIR)
+        
+        # Ensure directory exists
+        dir_path = Path(directory)
+        if not dir_path.exists():
+            dir_path = Path(DEFAULT_UPLOAD_DIR)
+            ensure_upload_directory()
+        
+        space_info = get_disk_space(str(dir_path))
+        
+        if space_info is None:
+            return jsonify({
+                "status": "error",
+                "error": "Could not get disk space information"
+            }), 500
+        
+        return jsonify({
+            "status": "success",
+            "directory": str(dir_path),
+            **space_info
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting disk space: {e}")
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
